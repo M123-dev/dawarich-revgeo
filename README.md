@@ -1,30 +1,13 @@
 # Dawarich Reverse Geocoder
 
+
 A small local reverse geocoding service for Dawarich. It exposes a Photon-compatible `/reverse` endpoint and returns GeoJSON features with only `country` and the most specific admin name (exposed as `city`).
 
-## Required environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `GPKG_FILE` | `gadm41_DEU.gpkg` | Path to the GADM GeoPackage file |
-| `GPKG_LAYER` | `ADM_ADM_4` | GeoPackage layer name |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `2322` | HTTP port |
-| `API_KEY` | - | API key for request authentication; optional (if unset, API is open locally) |
-| `API_KEY_HEADER` | `X-API-Key` | Header name carrying the API key |
+## How to run
 
-## Explainer — GADM licensing & recommended distribution
-
-GADM data is *not* redistributable for commercial use and often has restrictions for redistribution or publishing. Do NOT commit `.gpkg` files to your repository or bake them into container images. Instead, require users to download the GeoPackage themselves and mount it into the container at runtime. This project follows that approach:
-
-- The `Dockerfile` and `docker-compose.yml` mount the GeoPackage from the host into the container (read-only recommended).
-- We intentionally add `*.gpkg` to `.gitignore` so large data files are never committed by accident.
-
-Why this matters:
-- Publishing GADM files in a public repo or in a published image may violate their license and expose you to takedown or legal risk.
-- Requiring users to download the dataset ensures they accept any license terms directly and keeps your repo/image free of restricted data.
-
-How to use locally / in Docker (summary):
+> [!NOTE]  
+> You must download the GADM GeoPackage yourself as its redistribution is not allowed.
 
 1. Download the GADM GeoPackage for the country/level you need from https://gadm.org/ (follow their license and download terms).
 2. Place the `.gpkg` file next to the project (or somewhere on your host).
@@ -38,6 +21,19 @@ docker run --rm -p 2322:2322 \
 ```
 
 Or use the provided `docker-compose.yml` which mounts `./gadm41_DEU.gpkg` into the container.
+
+
+## Required environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `GPKG_FILE` | `gadm41_DEU.gpkg` | Path to the GADM GeoPackage file |
+| `GPKG_LAYER` | `ADM_ADM_4` | GeoPackage layer name |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `2322` | HTTP port |
+| `API_KEY` | - | API key for request authentication; optional (if unset, API is open locally) |
+| `API_KEY_HEADER` | `X-API-Key` | Header name carrying the API key |
+
 
 ## Notes
 
