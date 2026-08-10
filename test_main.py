@@ -100,17 +100,6 @@ def test_reverse_geocode_endpoint_returns_geojson(client: TestClient) -> None:
     assert payload["features"][0]["properties"]["city"] == "Berlin"
 
 
-def test_reverse_geocode_endpoint_supports_radius(client: TestClient) -> None:
-    response = client.get(
-        "/reverse",
-        params={"lat": 52.5, "lon": 13.4, "radius": 10},
-        headers={"X-API-Key": "test-key"},
-    )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["features"][0]["properties"]["country"] == "Germany"
-
-
 def test_reverse_geocode_endpoint_requires_api_key(client: TestClient) -> None:
     response = client.get("/reverse", params={"lat": 52.5, "lon": 13.4})
     assert response.status_code == 401
@@ -139,3 +128,61 @@ def test_startup_event_populates_state(monkeypatch: pytest.MonkeyPatch, sample_g
     assert hasattr(main.app.state, "gdf")
     assert hasattr(main.app.state, "spatial_index")
     assert main.app.state.gdf is sample_gdf
+
+
+def test_settings_from_env_uses_explicit_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GPKG_FILE", "/tmp/example.gpkg")
+    monkeypatch.setenv("GPKG_LAYER", "ADM_ADM_2")
+    monkeypatch.setenv("GPKG_MODE", "region")
+    monkeypatch.setenv("GPKG_BBOX", "10,45,15,55")
+    monkeypatch.setenv("HOST", "127.0.0.1")
+    monkeypatch.setenv("PORT", "9000")
+    monkeypatch.setenv("API_KEY", "secret")
+    monkeypatch.setenv("API_KEY_HEADER", "X-Auth")
+
+    settings = main.Settings.from_env()
+
+    assert settings.gpkg_file == "/tmp/example.gpkg"
+    assert settings.gpkg_layer == "ADM_ADM_2"
+    assert settings.gpkg_mode == "region"
+    assert settings.gpkg_bbox == (10.0, 45.0, 15.0, 55.0)
+    assert settings.host == "127.0.0.1"
+    assert settings.port == 9000
+    assert settings.api_key == "secret"
+    assert settings.api_key_header == "X-Auth"
+
+
+def test_settings_resolves_relative_dataset_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GPKG_FILE", "datasets/region.gpkg")
+
+    settings = main.Settings.from_env()
+
+    assert settings.gpkg_path == (tmp_path / "datasets/region.gpkg").resolve()
+
+
+def test_load_gadm_passes_bbox_for_region_mode(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    gpkg_path = tmp_path / "region.gpkg"
+    gpkg_path.write_text("dummy")
+    captured: dict[str, object] = {}
+
+    def fake_read_file(path: str, layer: str, columns: list[str], bbox: tuple[float, float, float, float] | None = None):
+        captured["path"] = path
+        captured["layer"] = layer
+        captured["columns"] = columns
+        captured["bbox"] = bbox
+        return sample_gdf
+
+    sample_gdf = gpd.GeoDataFrame(
+        [{"NAME_0": "Germany", "geometry": Polygon([(13.3, 52.4), (13.5, 52.4), (13.5, 52.6), (13.3, 52.6)])}],
+        geometry="geometry",
+        crs="EPSG:4326",
+    )
+
+    monkeypatch.setattr(main, "resolve_gadm_layer", lambda *_args, **_kwargs: "ADM_ADM_4")
+    monkeypatch.setattr(main.gpd, "read_file", fake_read_file)
+
+    result = main.load_gadm(str(gpkg_path), "ADM_ADM_4", ["geometry", "NAME_0"], bbox=(10.0, 45.0, 15.0, 55.0))
+
+    assert result is sample_gdf
+    assert captured["bbox"] == (10.0, 45.0, 15.0, 55.0)

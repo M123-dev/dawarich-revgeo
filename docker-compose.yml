@@ -1,19 +1,17 @@
-version: "3.8"
-
 services:
   reverse-geocoder:
-    build: .
-    image: daw-revgeo:latest
-    container_name: daw-revgeo
+    build:
+      context: .
+    container_name: dawarich-reverse-geocoder
     ports:
       - "2322:2322"
-    volumes:
-      - ./gadm41_DEU.gpkg:/app/gadm41_DEU.gpkg:ro
     environment:
-      - GPKG_FILE=/app/gadm41_DEU.gpkg
-      - GPKG_LAYER=ADM_ADM_4
-      - API_KEY=${API_KEY:-change-me-local-key}
-      - API_KEY_HEADER=${API_KEY_HEADER:-X-API-Key}
-      - HOST=0.0.0.0
-      - PORT=2322
+      HOST: "0.0.0.0"
+      PORT: "2322"
+      GPKG_FILE: "/datasets/gadm_410.gpkg"
+      #GPKG_LAYER: "ADM_ADM_4"
+      API_KEY: "change-me-local-key"
+      API_KEY_HEADER: "X-API-Key"
+    volumes:
+      - "./datasets:/datasets:ro"
     restart: unless-stopped

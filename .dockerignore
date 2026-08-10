@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+.venv/
+.git/
+.gitignore
+*.pyc
+*.pyo
+.DS_Store
+*.log
+
+datasets/*
+!datasets/.gitkeep
+*.gpkg
