@@ -40,14 +40,17 @@ The host dataset directory is mounted into the container at `/datasets`, and the
 
 ## Required environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `GPKG_FILE` | `datasets/gadm_410.gpkg` | Path to the GADM GeoPackage file. In Docker this should be set explicitly in Compose and is the source of truth. |
-| `GPKG_LAYER` | unset / optional | Explicit layer override. If unset, the app inspects the file and picks the best matching layer automatically. |
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `2322` | HTTP port |
-| `API_KEY` | unset | Optional API key; if unset, the API is open |
-| `API_KEY_HEADER` | `X-API-Key` | Header name carrying the API key |
+| Variable | Required? | Default | Allowed values | Description |
+|---|---|---|---|---|
+| `GPKG_FILE` | Yes | `datasets/gadm_410.gpkg` | Any valid path | Path to the GADM GeoPackage file. In Docker this should be set explicitly in Compose and is the source of truth. |
+| `GPKG_LAYER` | No | unset | Any layer name present in the GeoPackage | Explicit layer override. If unset, the app inspects the file and picks the best matching layer automatically. |
+| `GPKG_CACHE_MODE` | No | `country` | `country`, `world` | Cache strategy for loaded geometry subsets. `country` keeps the working set small; `world` uses the full dataset. |
+| `GPKG_CACHE_MAX_COUNTRIES` | No | `3` | Any positive integer | Maximum number of cached country subsets to retain in memory. |
+| `GPKG_CACHE_TTL_SECONDS` | No | `86400` | Any positive integer | Time-to-live for cached country subsets in seconds before they expire. |
+| `HOST` | No | `0.0.0.0` | Any bind address | Bind address for the HTTP server. |
+| `PORT` | No | `2322` | Any valid TCP port | HTTP port for the service. |
+| `API_KEY` | No | unset | Any string | Optional API key. If unset, the API is open. |
+| `API_KEY_HEADER` | No | `X-API-Key` | Any header name | Header name carrying the API key. |
 
 ## API usage
 
