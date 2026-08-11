@@ -158,6 +158,28 @@ def test_load_gadm_raises_missing_file(tmp_path: Path) -> None:
         main.load_gadm(str(missing_path), layer="ADM_ADM_4", columns=["geometry"])
 
 
+def test_load_gadm_logs_and_raises_for_missing_layer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    gpkg_path = tmp_path / "dataset.gpkg"
+    gpkg_path.write_bytes(b"")
+
+    def raise_missing_layer(*_args, **_kwargs):
+        raise ValueError("Layer not found")
+
+    monkeypatch.setattr(main.gpd, "read_file", raise_missing_layer)
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(RuntimeError, match="Configured GPKG_LAYER 'ADM_ADM_4' could not be opened"):
+            main.load_gadm(str(gpkg_path), layer="ADM_ADM_4", columns=["geometry"])
+
+    assert "Failed to load GeoPackage layer" in caplog.text
+    assert str(gpkg_path) in caplog.text
+    assert "ADM_ADM_4" in caplog.text
+
+
 def test_startup_event_populates_state(monkeypatch: pytest.MonkeyPatch, sample_gdf: gpd.GeoDataFrame) -> None:
     main.API_KEY = "test-key"
     monkeypatch.setattr(main, "load_gadm", lambda *_args, **_kwargs: sample_gdf)
@@ -190,6 +212,14 @@ def test_settings_from_env_uses_explicit_values(monkeypatch: pytest.MonkeyPatch)
     assert settings.port == 9000
     assert settings.api_key == "secret"
     assert settings.api_key_header == "X-Auth"
+
+
+def test_settings_defaults_layer_to_adm_adm_4(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GPKG_LAYER", raising=False)
+
+    settings = main.Settings.from_env()
+
+    assert settings.gpkg_layer == "ADM_ADM_4"
 
 
 def test_settings_resolves_relative_dataset_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -1,7 +1,6 @@
 fastapi
 uvicorn[standard]
 geopandas
-pyogrio
 shapely
 pytest
 httpx2

@@ -9,7 +9,7 @@ services:
       HOST: "0.0.0.0"
       PORT: "2322"
       GPKG_FILE: "/datasets/gadm_410.gpkg"
-      GPKG_LAYER: ""
+      GPKG_LAYER: "gadm_410"
       GPKG_CACHE_MODE: "country"
       GPKG_CACHE_MAX_COUNTRIES: "3"
       GPKG_CACHE_TTL_SECONDS: "86400"

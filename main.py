@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
+import logging
 import os
 import time
 from collections import OrderedDict
@@ -18,6 +18,8 @@ from shapely.geometry import Point
 GPKG_COLUMNS = ["geometry", "NAME_0", "NAME_1", "NAME_2", "NAME_3", "NAME_4", "COUNTRY"]
 COUNTRY_KEYS = ("COUNTRY", "NAME_0")
 STATE_KEYS = ("NAME_4", "NAME_3", "NAME_2", "NAME_1")
+DEFAULT_GPKG_LAYER = "gadm_410"
+logger = logging.getLogger(__name__)
 
 
 def default_gpkg_file() -> str:
@@ -27,7 +29,7 @@ def default_gpkg_file() -> str:
 @dataclass(frozen=True)
 class Settings:
     gpkg_file: str = "datasets/gadm_410.gpkg"
-    gpkg_layer: str | None = None
+    gpkg_layer: str = DEFAULT_GPKG_LAYER
     gpkg_cache_mode: str = "country"
     gpkg_cache_max_countries: int = 3
     gpkg_cache_ttl_seconds: int = 900
@@ -45,12 +47,12 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        raw_layer = os.getenv("GPKG_LAYER")
+        raw_layer = (os.getenv("GPKG_LAYER") or DEFAULT_GPKG_LAYER).strip() or DEFAULT_GPKG_LAYER
         raw_cache_mode = (os.getenv("GPKG_CACHE_MODE") or "country").strip().lower()
         raw_cache_mode = raw_cache_mode if raw_cache_mode in {"country", "world"} else "country"
         return cls(
             gpkg_file=os.getenv("GPKG_FILE", default_gpkg_file()),
-            gpkg_layer=raw_layer if raw_layer else None,
+            gpkg_layer=raw_layer,
             gpkg_cache_mode=raw_cache_mode,
             gpkg_cache_max_countries=int(os.getenv("GPKG_CACHE_MAX_COUNTRIES", "3")),
             gpkg_cache_ttl_seconds=int(os.getenv("GPKG_CACHE_TTL_SECONDS", "900")),
@@ -92,91 +94,10 @@ async def lifespan(app: FastAPI):
     init_gadm_state()
     yield
 
-# Fallback: When a non standard dataset is used, the layer name may not match the expected GADM layer.
-# This function attempts to list available layers and select the most appropriate one.
-def _list_gpkg_layers(file_path: str) -> list[str]:
-    if importlib.util.find_spec("pyogrio") is None:
-        return []
-
-    try:
-        pyogrio = importlib.import_module("pyogrio")
-        if hasattr(pyogrio, "list_layers"):
-            raw = pyogrio.list_layers(file_path)
-            if raw is None:
-                return []
-
-            raw_list = list(raw)
-            if not raw_list:
-                return []
-
-            first = raw_list[0]
-            if isinstance(first, dict) and "name" in first:
-                return [str(item["name"]) for item in raw_list]
-
-            normalized: list[str] = []
-            for item in raw_list:
-                if isinstance(item, str):
-                    normalized.append(item)
-                elif isinstance(item, dict):
-                    name = item.get("name")
-                    if name is not None:
-                        normalized.append(str(name))
-                elif hasattr(item, "__iter__") and not isinstance(item, (bytes, bytearray)):
-                    values = list(item)
-                    if values:
-                        normalized.append(str(values[0]))
-            return normalized
-    except Exception:
-        pass
-
-    return []
-
-# Select the best matching GADM layer from a list of available layers,
-# prioritizing the preferred layer if present.
-def _select_gadm_layer(layers: Sequence[str], preferred: str | None = None) -> str:
-    if not layers:
-        return preferred or ""
-
-    normalized_layers = [layer for layer in layers if isinstance(layer, str)]
-    if preferred and preferred in normalized_layers:
-        return preferred
-
-    adm_candidates = [
-        layer for layer in normalized_layers if "adm" in layer.lower() or "admin" in layer.lower()
-    ]
-    if adm_candidates:
-        for suffix in ("4", "3", "2", "1"):
-            for layer in adm_candidates:
-                lowered = layer.lower()
-                if lowered.endswith(f"_{suffix}") or lowered.endswith(f"adm_{suffix}") or lowered.endswith(suffix):
-                    return layer
-        return adm_candidates[0]
-
-    if len(normalized_layers) == 1:
-        return normalized_layers[0]
-
-    return normalized_layers[0]
-
-
-def resolve_gadm_layer(file_path: str, preferred: str | None) -> str:
-    available_layers = _list_gpkg_layers(file_path)
-    if preferred is not None:
-        if preferred in available_layers:
-            return preferred
-        available = ", ".join(available_layers) if available_layers else "(none available)"
-        raise RuntimeError(
-            f"Configured GPKG_LAYER '{preferred}' is not available in '{file_path}'. Available layers: {available}."
-        )
-
-    if not available_layers:
-        raise RuntimeError(f"Could not auto-detect a layer in '{file_path}'.")
-
-    return _select_gadm_layer(available_layers)
-
 
 def load_gadm(
     file_path: str,
-    layer: str | None,
+    layer: str,
     columns: list[str],
     bbox: tuple[float, float, float, float] | None = None,
 ) -> gpd.GeoDataFrame:
@@ -189,8 +110,7 @@ def load_gadm(
             f"Missing GeoPackage: {resolved_path}. Please place the file next to this script or set GPKG_FILE."
         )
 
-    chosen_layer = resolve_gadm_layer(str(resolved_path), layer)
-    read_kwargs = {"layer": chosen_layer, "columns": columns}
+    read_kwargs = {"layer": layer, "columns": columns}
     if bbox is not None:
         read_kwargs["bbox"] = bbox
 
@@ -200,12 +120,15 @@ def load_gadm(
             return loaded
         return gpd.GeoDataFrame(loaded, geometry="geometry")
     except Exception as exc:
-        if layer is not None:
-            raise RuntimeError(
-                f"Configured GPKG_LAYER '{layer}' is not available in '{resolved_path}'."
-            ) from exc
+        logger.exception(
+            "Failed to load GeoPackage layer file=%s layer=%s columns=%s bbox=%s",
+            resolved_path,
+            layer,
+            columns,
+            bbox,
+        )
         raise RuntimeError(
-            f"Auto-detected layer '{chosen_layer}' could not be opened for '{resolved_path}': {exc}"
+            f"Configured GPKG_LAYER '{layer}' could not be opened for '{resolved_path}'. Check that the layer exists and matches the dataset schema."
         ) from exc
 
 
@@ -312,9 +235,8 @@ def _build_bbox(point: Point, size_deg: float = 1.0) -> tuple[float, float, floa
 
 def _load_country_subset(
     file_path: str,
-    layer: str | None,
+    layer: str,
     point: Point,
-    settings: Settings,
 ) -> tuple[str, gpd.GeoDataFrame] | None:
     bbox = _build_bbox(point, size_deg=1.0)
     _cache_log(f"loading country subset for point=({point.x}, {point.y}) bbox={bbox}")
@@ -342,19 +264,23 @@ def validate_api_key(api_key: str | None, required_key: str | None = None) -> No
 def init_gadm_state() -> None:
     current_settings = get_runtime_settings()
     try:
-        resolved_path = Path(current_settings.gpkg_file).expanduser()
-        if not resolved_path.is_absolute():
-            resolved_path = (Path.cwd() / resolved_path).resolve()
-        effective_layer = resolve_gadm_layer(str(resolved_path), current_settings.gpkg_layer)
-        layer_source = "explicit" if current_settings.gpkg_layer is not None else "auto-detected"
+        resolved_path = current_settings.gpkg_path
         print(
-            f"Starting reverse geocoder: dataset={resolved_path} layer={effective_layer} mode={current_settings.gpkg_cache_mode} source={layer_source}",
+            f"Starting reverse geocoder: dataset={resolved_path} layer={current_settings.gpkg_layer} mode={current_settings.gpkg_cache_mode}",
             flush=True,
         )
         startup_bbox = (-0.1, -0.1, 0.1, 0.1)
-        gdf = load_gadm(current_settings.gpkg_file, effective_layer, GPKG_COLUMNS, bbox=startup_bbox)
+        gdf = load_gadm(current_settings.gpkg_file, current_settings.gpkg_layer, GPKG_COLUMNS, bbox=startup_bbox)
     except FileNotFoundError as error:
+        logger.exception("GeoPackage file not found during startup: %s", current_settings.gpkg_path)
         raise RuntimeError(str(error)) from error
+    except RuntimeError:
+        logger.exception(
+            "Reverse geocoder startup failed for dataset=%s layer=%s",
+            current_settings.gpkg_path,
+            current_settings.gpkg_layer,
+        )
+        raise
 
     app.state.settings = current_settings
     app.state.cache = CountryCache(
@@ -420,7 +346,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             current_settings.gpkg_file,
             current_settings.gpkg_layer,
             point,
-            current_settings,
         )
         if subset_result is None:
             return build_feature(lon, lat, "Unknown", "Unknown")
