@@ -3,6 +3,7 @@ services:
     build:
       context: .
     container_name: dawarich-reverse-geocoder
+    user: "568:568"
     ports:
       - "2322:2322"
     environment:
