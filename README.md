@@ -12,7 +12,7 @@ This project provides the same API while using a much smaller dataset from [GADM
 > [!NOTE]
 > You must manually download the GADM GeoPackage yourself because redistribution is not permitted by its license. ([Read](https://gadm.org/license.html)).
 
-## Local run
+## Setup
 
 1. Download the GADM **GeoPackage** for the country/level you need from gadm.org (follow their license and download terms). If you plan to travel opt for the [whole world dataset](https://gadm.org/download_world.html)
 
