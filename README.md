@@ -68,8 +68,8 @@ Also have a look at the [official Dawarich docs](https://dawarich.app/docs/self-
 | `GPKG_FILE` | Yes | `datasets/gadm_410.gpkg` | Any valid path | Path to the GADM GeoPackage file. In Docker this should be set explicitly in Compose and is the source of truth. |
 | `GPKG_LAYER` | No | `gadm_410` | Any layer name present in the GeoPackage | Explicit layer name to load. (Find using find_layer.py) |
 | `GPKG_CACHE_MODE` | No | `country` | `country`, `world` | Cache strategy for loaded geometry subsets. `country` keeps the working set small; `world` uses the full dataset. |
-| `GPKG_CACHE_MAX_COUNTRIES` | No | `3` | Any positive integer | Maximum number of cached country subsets to retain in memory. |
-| `GPKG_CACHE_TTL_SECONDS` | No | `86400` | Any positive integer | Time-to-live for cached country subsets in seconds before they expire. |
+| `GPKG_CACHE_MAX_TILES` | No | `20` | Any positive integer | Maximum number of cached spatial tiles to retain in memory (LRU). Default 20. |
+| `GPKG_CACHE_TTL_SECONDS` | No | `86400` | Any positive integer | Time-to-live for cached tiles in seconds before they expire. |
 | `HOST` | No | `0.0.0.0` | Any bind address | Bind address for the HTTP server. |
 | `PORT` | No | `2322` | Any valid TCP port | HTTP port for the service. |
 | `API_KEY` | No | unset | Any string | Optional API key. If unset, the API is open. |

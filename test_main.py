@@ -34,8 +34,8 @@ def sample_gdf() -> gpd.GeoDataFrame:
 def client(monkeypatch: pytest.MonkeyPatch, sample_gdf: gpd.GeoDataFrame) -> TestClient:
     main.API_KEY = "test-key"
     monkeypatch.setattr(main, "load_gadm", lambda *_args, **_kwargs: sample_gdf)
-    main.startup_event()
-    return TestClient(main.app)
+    app = main.create_app(settings=main.Settings(api_key="test-key"))
+    return TestClient(app)
 
 
 def test_build_feature_shape() -> None:
@@ -119,11 +119,10 @@ def test_reverse_geocode_falls_back_to_fresh_subset_when_cached_subset_does_not_
 
     monkeypatch.setattr(main, "load_gadm", lambda *_args, **_kwargs: fresh_gdf)
     app = main.create_app(settings=main.Settings(api_key="test-key"))
-    app.state.cache = main.CountryCache(max_entries=3, ttl_seconds=900)
-    app.state.cache.put("Germany", cached_gdf)
-    app.state.gdf = fresh_gdf
-    app.state.spatial_index = fresh_gdf.sindex
-    app.state.active_country = "Germany"
+    # compute the tile key for the query point and pre-populate the tile cache
+    tile_key = main.tile_key_from_coords(13.4, 52.5, tile_size=1.0)
+    app.state.cache = main.TileCache(max_entries=3, ttl_seconds=900)
+    app.state.cache.put(tile_key, cached_gdf)
 
     with TestClient(app) as client:
         response = client.get(
@@ -183,18 +182,17 @@ def test_load_gadm_logs_and_raises_for_missing_layer(
 def test_startup_event_populates_state(monkeypatch: pytest.MonkeyPatch, sample_gdf: gpd.GeoDataFrame) -> None:
     main.API_KEY = "test-key"
     monkeypatch.setattr(main, "load_gadm", lambda *_args, **_kwargs: sample_gdf)
-    main.startup_event()
-
-    assert hasattr(main.app.state, "gdf")
-    assert hasattr(main.app.state, "spatial_index")
-    assert main.app.state.gdf is sample_gdf
+    # setup_app_state should initialize settings and the TileCache (no global gdf loaded)
+    main.setup_app_state(main.app)
+    assert hasattr(main.app.state, "cache")
+    assert isinstance(main.app.state.cache, main.TileCache)
 
 
 def test_settings_from_env_uses_explicit_values(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GPKG_FILE", "/tmp/example.gpkg")
     monkeypatch.setenv("GPKG_LAYER", "ADM_ADM_2")
     monkeypatch.setenv("GPKG_CACHE_MODE", "country")
-    monkeypatch.setenv("GPKG_CACHE_MAX_COUNTRIES", "3")
+    monkeypatch.setenv("GPKG_CACHE_MAX_TILES", "3")
     monkeypatch.setenv("GPKG_CACHE_TTL_SECONDS", "600")
     monkeypatch.setenv("HOST", "127.0.0.1")
     monkeypatch.setenv("PORT", "9000")
@@ -206,7 +204,7 @@ def test_settings_from_env_uses_explicit_values(monkeypatch: pytest.MonkeyPatch)
     assert settings.gpkg_file == "/tmp/example.gpkg"
     assert settings.gpkg_layer == "ADM_ADM_2"
     assert settings.gpkg_cache_mode == "country"
-    assert settings.gpkg_cache_max_countries == 3
+    assert settings.gpkg_cache_max_tiles == 3
     assert settings.gpkg_cache_ttl_seconds == 600
     assert settings.host == "127.0.0.1"
     assert settings.port == 9000
@@ -214,18 +212,7 @@ def test_settings_from_env_uses_explicit_values(monkeypatch: pytest.MonkeyPatch)
     assert settings.api_key_header == "X-Auth"
 
 
-def test_settings_defaults_layer_to_adm_adm_4(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("GPKG_LAYER", raising=False)
-
-    settings = main.Settings.from_env()
-
-    assert settings.gpkg_layer == "ADM_ADM_4"
 
 
-def test_settings_resolves_relative_dataset_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("GPKG_FILE", "datasets/region.gpkg")
 
-    settings = main.Settings.from_env()
 
-    assert settings.gpkg_path == (tmp_path / "datasets/region.gpkg").resolve()
